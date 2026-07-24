@@ -1,0 +1,29 @@
+[project]
+name = "crystalflow-dify"
+version = "0.1.0"
+description = "Progressive crystallization tools for Dify"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Benjamin Begovic" }]
+dependencies = [
+    "dify-plugin>=0.9.0,<0.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0,<9",
+    "ruff>=0.12.0,<1",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

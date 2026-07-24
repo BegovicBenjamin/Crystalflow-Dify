@@ -1,0 +1,60 @@
+identity:
+  name: crystal_status
+  author: begovicbenjamin
+  label:
+    en_US: Crystal status
+description:
+  human:
+    en_US: List crystals or inspect one crystal's versions and savings counters.
+  llm: >-
+    Read CrystalFlow's workspace-local catalog. Use an empty crystal_name for a compact list, or an
+    exact name for version and telemetry details. This tool does not execute or mutate a crystal.
+parameters:
+  - name: namespace
+    type: string
+    required: true
+    default: default
+    form: form
+    label:
+      en_US: Namespace
+    human_description:
+      en_US: Must match the namespace used by the other CrystalFlow nodes.
+  - name: crystal_name
+    type: string
+    required: false
+    form: llm
+    label:
+      en_US: Crystal name
+    human_description:
+      en_US: Leave empty to list the namespace.
+    llm_description: Exact crystal name, or omit it to list available crystals.
+  - name: include_program
+    type: boolean
+    required: false
+    form: form
+    label:
+      en_US: Include program
+    human_description:
+      en_US: Exposes stored IR and test metadata. Leave disabled for normal chatbot use.
+output_schema:
+  type: object
+  properties:
+    status:
+      type: string
+    crystal_name:
+      type: string
+    active_version:
+      type: integer
+    crystal_count:
+      type: integer
+    details_json:
+      type: string
+    total_runs:
+      type: integer
+    estimated_tokens_avoided:
+      type: integer
+    message:
+      type: string
+extra:
+  python:
+    source: tools/crystal_status.py

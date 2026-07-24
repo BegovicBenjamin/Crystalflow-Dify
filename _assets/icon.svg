@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="CrystalFlow">
+  <defs>
+    <linearGradient id="g" x1="18" y1="14" x2="108" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7DD3FC"/>
+      <stop offset=".52" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="#0F172A"/>
+  <path d="M64 13 105 37 96 91 64 115 32 91 23 37Z" fill="url(#g)"/>
+  <path d="m64 13 13 36-13 66-13-66Z" fill="#E0F2FE" fill-opacity=".82"/>
+  <path d="m23 37 28 12 13 66-32-24Zm82 0L77 49l-13 66 32-24Z" fill="#C4B5FD" fill-opacity=".58"/>
+  <path d="M23 37h82L77 49H51Z" fill="#F8FAFC" fill-opacity=".78"/>
+</svg>

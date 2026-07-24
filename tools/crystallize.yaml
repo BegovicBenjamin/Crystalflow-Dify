@@ -1,0 +1,126 @@
+identity:
+  name: crystallize
+  author: begovicbenjamin
+  label:
+    en_US: Crystallize deterministic routine
+description:
+  human:
+    en_US: Validate test vectors, then save a versioned deterministic JSON routine.
+  llm: >-
+    Create or improve a reusable deterministic routine. Use this only for a pure task whose result
+    depends entirely on structured JSON input. Supply Crystal IR v1 JSON and exact test vectors.
+    The plugin never executes Python or makes external calls. A passing version can replace the
+    active version; previous versions remain available.
+parameters:
+  - name: namespace
+    type: string
+    required: true
+    default: default
+    form: form
+    label:
+      en_US: Namespace
+    human_description:
+      en_US: Workspace-local application namespace. Configure the same value on every CrystalFlow node.
+  - name: crystal_name
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Crystal name
+    human_description:
+      en_US: Stable lowercase task key, for example invoice_total.
+    llm_description: A stable lowercase identifier using letters, numbers, underscores, or hyphens.
+  - name: description
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Description
+    human_description:
+      en_US: What the routine computes and the domain in which it is valid.
+    llm_description: Concisely describe the pure deterministic task and its valid input domain.
+  - name: program_json
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Crystal IR program
+    human_description:
+      en_US: A Crystal IR v1 program encoded as strict JSON.
+    llm_description: >-
+      Strict JSON object with version 1, optional input_schema/output_schema, and expression.
+      Every expression is an object with an allowlisted op. Literals use
+      {"op":"literal","value":...}; reads use {"op":"input","name":"field"} (or omit name for the
+      whole input); nested lookup uses {"op":"get","target":EXPR,"key":EXPR};
+      objects use {"op":"object","fields":{"name":EXPR}}; arrays use
+      {"op":"array","items":[EXPR]}. Arithmetic, comparison, Boolean, and string operators take
+      "args":[EXPR,...]. Supported operators are documented by CrystalFlow and include add, sub,
+      mul, div, mod, pow, round, min, max, abs, concat, lower, upper, strip, replace, split, join,
+      length, slice, eq, ne, gt, gte, lt, lte, and, or, not, if, and coalesce. Collections use
+      {"op":"map|filter|sort","collection":EXPR,"var":"item","body":EXPR}; body reads the item with
+      {"op":"var","name":"item"}. Sum uses {"op":"sum","collection":EXPR}. No Python, imports,
+      calls, time, randomness, filesystem, or network.
+  - name: tests_json
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Test vectors
+    human_description:
+      en_US: JSON array of exact input/output examples.
+    llm_description: >-
+      Strict JSON array with at least one {"name":"case","input":...,"expected":...} test. Include
+      boundary cases. Expected values are compared as canonical JSON.
+  - name: activation_policy
+    type: select
+    required: true
+    default: draft
+    form: form
+    label:
+      en_US: Activation policy
+    human_description:
+      en_US: Store passing versions as drafts or make them the active fast-path version.
+    options:
+      - value: draft
+        label:
+          en_US: Store as draft
+      - value: activate_after_tests
+        label:
+          en_US: Activate after all tests pass
+  - name: estimated_tokens_per_run
+    type: number
+    required: false
+    default: 0
+    min: 0
+    max: 1000000
+    form: llm
+    label:
+      en_US: Estimated tokens avoided per hit
+    human_description:
+      en_US: Optional baseline estimate used only for savings telemetry.
+    llm_description: Optional estimate of model tokens this routine replaces on each workflow fast-path hit.
+output_schema:
+  type: object
+  properties:
+    status:
+      type: string
+      description: active, draft, invalid, or error
+    crystal_name:
+      type: string
+    version:
+      type: integer
+    program_hash:
+      type: string
+    tests_passed:
+      type: boolean
+    test_count:
+      type: integer
+    active:
+      type: boolean
+    created:
+      type: boolean
+    message:
+      type: string
+extra:
+  python:
+    source: tools/crystallize.py

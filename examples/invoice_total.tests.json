@@ -1,0 +1,38 @@
+[
+  {
+    "name": "mixed_items_with_tax",
+    "input": {
+      "items": [
+        {"quantity": 2, "unit_price_cents": 1299},
+        {"quantity": 1, "unit_price_cents": 500}
+      ],
+      "tax_basis_points": 825
+    },
+    "expected": {
+      "subtotal_cents": 3098,
+      "tax_cents": 256,
+      "total_cents": 3354
+    }
+  },
+  {
+    "name": "empty_invoice",
+    "input": {"items": [], "tax_basis_points": 825},
+    "expected": {
+      "subtotal_cents": 0,
+      "tax_cents": 0,
+      "total_cents": 0
+    }
+  },
+  {
+    "name": "zero_tax",
+    "input": {
+      "items": [{"quantity": 3, "unit_price_cents": 250}],
+      "tax_basis_points": 0
+    },
+    "expected": {
+      "subtotal_cents": 750,
+      "tax_cents": 0,
+      "total_cents": 750
+    }
+  }
+]

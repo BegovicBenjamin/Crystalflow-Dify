@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "priority": {"type": "string", "enum": ["critical", "high", "normal"]},
+      "customer_tier": {"type": "string", "enum": ["gold", "standard"]},
+      "age_minutes": {"type": "integer", "minimum": 0, "maximum": 1000000}
+    },
+    "required": ["priority", "customer_tier", "age_minutes"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "queue": {"type": "string", "enum": ["incident", "escalated", "standard"]},
+      "sla_breached": {"type": "boolean"}
+    },
+    "required": ["queue", "sla_breached"],
+    "additionalProperties": false
+  },
+  "expression": {
+    "op": "object",
+    "fields": {
+      "queue": {
+        "op": "if",
+        "args": [
+          {
+            "op": "eq",
+            "args": [
+              {"op": "input", "name": "priority"},
+              {"op": "literal", "value": "critical"}
+            ]
+          },
+          {"op": "literal", "value": "incident"},
+          {
+            "op": "if",
+            "args": [
+              {
+                "op": "and",
+                "args": [
+                  {
+                    "op": "eq",
+                    "args": [
+                      {"op": "input", "name": "customer_tier"},
+                      {"op": "literal", "value": "gold"}
+                    ]
+                  },
+                  {
+                    "op": "gte",
+                    "args": [
+                      {"op": "input", "name": "age_minutes"},
+                      {"op": "literal", "value": 60}
+                    ]
+                  }
+                ]
+              },
+              {"op": "literal", "value": "escalated"},
+              {"op": "literal", "value": "standard"}
+            ]
+          }
+        ]
+      },
+      "sla_breached": {
+        "op": "if",
+        "args": [
+          {
+            "op": "eq",
+            "args": [
+              {"op": "input", "name": "priority"},
+              {"op": "literal", "value": "critical"}
+            ]
+          },
+          {
+            "op": "gte",
+            "args": [
+              {"op": "input", "name": "age_minutes"},
+              {"op": "literal", "value": 15}
+            ]
+          },
+          {
+            "op": "if",
+            "args": [
+              {
+                "op": "eq",
+                "args": [
+                  {"op": "input", "name": "priority"},
+                  {"op": "literal", "value": "high"}
+                ]
+              },
+              {
+                "op": "gte",
+                "args": [
+                  {"op": "input", "name": "age_minutes"},
+                  {"op": "literal", "value": 60}
+                ]
+              },
+              {
+                "op": "gte",
+                "args": [
+                  {"op": "input", "name": "age_minutes"},
+                  {"op": "literal", "value": 240}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

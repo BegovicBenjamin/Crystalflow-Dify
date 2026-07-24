@@ -1,0 +1,66 @@
+identity:
+  name: retire_crystal
+  author: begovicbenjamin
+  label:
+    en_US: Retire crystal
+description:
+  human:
+    en_US: Disable a crystal version without deleting its immutable audit record.
+  llm: >-
+    Administrative, recoverable mutation for a controlled admin workflow. The repeated name is a
+    mistake guard, not proof of user approval. Do not expose this tool to a general-purpose Agent.
+parameters:
+  - name: namespace
+    type: string
+    required: true
+    default: default
+    form: form
+    label:
+      en_US: Namespace
+    human_description:
+      en_US: Must match the namespace containing the crystal.
+  - name: crystal_name
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Crystal name
+    human_description:
+      en_US: Exact name of the version to disable.
+    llm_description: Exact crystal name selected by the controlled admin workflow.
+  - name: confirm_crystal_name
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Confirm crystal name
+    human_description:
+      en_US: Stale-target guard; must exactly repeat the crystal name.
+    llm_description: Repeat the exact crystal name as a consistency check.
+  - name: version
+    type: number
+    required: false
+    default: 0
+    min: 0
+    form: llm
+    label:
+      en_US: Version
+    human_description:
+      en_US: Zero retires the active version.
+    llm_description: Positive version selected by the controlled admin workflow, or zero for active.
+output_schema:
+  type: object
+  properties:
+    status:
+      type: string
+    crystal_name:
+      type: string
+    version:
+      type: integer
+    active_version:
+      type: integer
+    message:
+      type: string
+extra:
+  python:
+    source: tools/retire_crystal.py

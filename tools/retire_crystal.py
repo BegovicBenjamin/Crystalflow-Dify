@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+from collections.abc import Generator
+from typing import Any
+
+from dify_plugin import Tool
+from dify_plugin.entities.tool import ToolInvokeMessage
+
+from crystalflow.errors import CrystalFlowError
+from crystalflow.registry import RegistryError
+from crystalflow.service import CrystalService, ServiceValidationError
+from tools._shared import (
+    ToolInputError,
+    as_non_negative_int,
+    result_messages,
+)
+
+_VARIABLES = (
+    "status",
+    "crystal_name",
+    "version",
+    "active_version",
+    "message",
+)
+
+
+class RetireCrystalTool(Tool):
+    def _invoke(
+        self,
+        tool_parameters: dict[str, Any],
+    ) -> Generator[ToolInvokeMessage]:
+        name = str(tool_parameters.get("crystal_name") or "")
+        payload: dict[str, Any] = {
+            "status": "invalid",
+            "crystal_name": name,
+            "version": 0,
+            "active_version": 0,
+            "message": "",
+        }
+        try:
+            namespace = str(tool_parameters.get("namespace") or "default")
+            version = as_non_negative_int(
+                tool_parameters.get("version", 0),
+                "version",
+                maximum=1_000,
+            )
+            confirmation = tool_parameters.get("confirm_crystal_name")
+            if not isinstance(confirmation, str):
+                raise ToolInputError("confirm_crystal_name must be a string")
+            service = CrystalService(self.session.storage, namespace)
+            payload = service.retire(
+                name=name,
+                confirmation=confirmation,
+                version=version,
+            )
+        except (ToolInputError, ServiceValidationError) as exc:
+            payload["message"] = str(exc)
+        except (CrystalFlowError, RegistryError) as exc:
+            payload["status"] = "error"
+            payload["message"] = str(exc)
+        except Exception:
+            payload["status"] = "error"
+            payload["message"] = "CrystalFlow encountered an unexpected internal error."
+
+        yield from result_messages(self, payload, _VARIABLES)

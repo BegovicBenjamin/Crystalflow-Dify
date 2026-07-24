@@ -1,0 +1,77 @@
+identity:
+  name: activate_crystal
+  author: begovicbenjamin
+  label:
+    en_US: Activate crystal version
+description:
+  human:
+    en_US: Promote an exactly identified, test-passing draft to the deterministic fast path.
+  llm: >-
+    Administrative mutation for a controlled admin workflow. The exact crystal name, version,
+    hash, and confirmation protect against mistakes and stale targets; they do not authenticate
+    user approval. Do not expose this tool to a general-purpose Agent.
+parameters:
+  - name: namespace
+    type: string
+    required: true
+    default: default
+    form: form
+    label:
+      en_US: Namespace
+    human_description:
+      en_US: Must match the namespace used when the draft was created.
+  - name: crystal_name
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Crystal name
+    human_description:
+      en_US: Exact name of the reviewed draft.
+    llm_description: Exact crystal name selected by the controlled admin workflow.
+  - name: version
+    type: number
+    required: true
+    min: 1
+    form: llm
+    label:
+      en_US: Version
+    human_description:
+      en_US: Exact positive version of the reviewed draft.
+    llm_description: Exact positive version selected by the controlled admin workflow.
+  - name: program_hash
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Program hash
+    human_description:
+      en_US: Exact SHA-256 digest shown during review.
+    llm_description: Exact SHA-256 program hash returned by crystallize or crystal_status.
+  - name: confirmation
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Confirmation
+    human_description:
+      en_US: Stale-target guard; must be ACTIVATE followed by a space and the crystal name.
+    llm_description: Supply "ACTIVATE <crystal_name>" as an exact consistency check.
+output_schema:
+  type: object
+  properties:
+    status:
+      type: string
+    crystal_name:
+      type: string
+    version:
+      type: integer
+    program_hash:
+      type: string
+    active_version:
+      type: integer
+    message:
+      type: string
+extra:
+  python:
+    source: tools/activate_crystal.py

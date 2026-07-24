@@ -1,0 +1,17 @@
+[
+  {
+    "name": "critical_breach",
+    "input": {"priority": "critical", "customer_tier": "standard", "age_minutes": 16},
+    "expected": {"queue": "incident", "sla_breached": true}
+  },
+  {
+    "name": "gold_escalation",
+    "input": {"priority": "normal", "customer_tier": "gold", "age_minutes": 90},
+    "expected": {"queue": "escalated", "sla_breached": false}
+  },
+  {
+    "name": "normal_breach",
+    "input": {"priority": "normal", "customer_tier": "standard", "age_minutes": 240},
+    "expected": {"queue": "standard", "sla_breached": true}
+  }
+]

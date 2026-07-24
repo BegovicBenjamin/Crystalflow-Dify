@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "maxItems": 100,
+        "items": {
+          "type": "object",
+          "properties": {
+            "quantity": {"type": "integer", "minimum": 0, "maximum": 1000000},
+            "unit_price_cents": {"type": "integer", "minimum": 0, "maximum": 1000000000}
+          },
+          "required": ["quantity", "unit_price_cents"],
+          "additionalProperties": false
+        }
+      },
+      "tax_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+    },
+    "required": ["items", "tax_basis_points"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "subtotal_cents": {"type": "integer", "minimum": 0},
+      "tax_cents": {"type": "integer", "minimum": 0},
+      "total_cents": {"type": "integer", "minimum": 0}
+    },
+    "required": ["subtotal_cents", "tax_cents", "total_cents"],
+    "additionalProperties": false
+  },
+  "expression": {
+    "op": "object",
+    "fields": {
+      "subtotal_cents": {
+        "op": "sum",
+        "collection": {
+          "op": "map",
+          "collection": {"op": "input", "name": "items"},
+          "var": "item",
+          "body": {
+            "op": "mul",
+            "args": [
+              {
+                "op": "get",
+                "target": {"op": "var", "name": "item"},
+                "key": {"op": "literal", "value": "quantity"}
+              },
+              {
+                "op": "get",
+                "target": {"op": "var", "name": "item"},
+                "key": {"op": "literal", "value": "unit_price_cents"}
+              }
+            ]
+          }
+        }
+      },
+      "tax_cents": {
+        "op": "round",
+        "args": [
+          {
+            "op": "div",
+            "args": [
+              {
+                "op": "mul",
+                "args": [
+                  {
+                    "op": "sum",
+                    "collection": {
+                      "op": "map",
+                      "collection": {"op": "input", "name": "items"},
+                      "var": "item",
+                      "body": {
+                        "op": "mul",
+                        "args": [
+                          {
+                            "op": "get",
+                            "target": {"op": "var", "name": "item"},
+                            "key": {"op": "literal", "value": "quantity"}
+                          },
+                          {
+                            "op": "get",
+                            "target": {"op": "var", "name": "item"},
+                            "key": {"op": "literal", "value": "unit_price_cents"}
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {"op": "input", "name": "tax_basis_points"}
+                ]
+              },
+              {"op": "literal", "value": 10000}
+            ]
+          }
+        ]
+      },
+      "total_cents": {
+        "op": "add",
+        "args": [
+          {
+            "op": "sum",
+            "collection": {
+              "op": "map",
+              "collection": {"op": "input", "name": "items"},
+              "var": "item",
+              "body": {
+                "op": "mul",
+                "args": [
+                  {
+                    "op": "get",
+                    "target": {"op": "var", "name": "item"},
+                    "key": {"op": "literal", "value": "quantity"}
+                  },
+                  {
+                    "op": "get",
+                    "target": {"op": "var", "name": "item"},
+                    "key": {"op": "literal", "value": "unit_price_cents"}
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "op": "round",
+            "args": [
+              {
+                "op": "div",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "sum",
+                        "collection": {
+                          "op": "map",
+                          "collection": {"op": "input", "name": "items"},
+                          "var": "item",
+                          "body": {
+                            "op": "mul",
+                            "args": [
+                              {
+                                "op": "get",
+                                "target": {"op": "var", "name": "item"},
+                                "key": {"op": "literal", "value": "quantity"}
+                              },
+                              {
+                                "op": "get",
+                                "target": {"op": "var", "name": "item"},
+                                "key": {"op": "literal", "value": "unit_price_cents"}
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {"op": "input", "name": "tax_basis_points"}
+                    ]
+                  },
+                  {"op": "literal", "value": 10000}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

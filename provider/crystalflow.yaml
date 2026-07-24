@@ -1,0 +1,20 @@
+identity:
+  author: begovicbenjamin
+  name: crystalflow
+  label:
+    en_US: CrystalFlow
+  description:
+    en_US: Build, validate, store, and run deterministic crystals without executing arbitrary code.
+  icon: icon.svg
+  tags:
+    - productivity
+    - utilities
+tools:
+  - tools/crystallize.yaml
+  - tools/execute_crystal.yaml
+  - tools/crystal_status.yaml
+  - tools/activate_crystal.yaml
+  - tools/retire_crystal.yaml
+extra:
+  python:
+    source: provider/crystalflow.py

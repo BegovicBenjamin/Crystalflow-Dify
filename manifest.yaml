@@ -1,0 +1,33 @@
+version: 0.1.0
+type: plugin
+author: begovicbenjamin
+name: crystalflow
+label:
+  en_US: CrystalFlow
+created_at: "2026-07-24T11:40:00Z"
+icon: icon.svg
+description:
+  en_US: Turn proven, repetitive chatbot work into versioned deterministic JSON programs.
+tags:
+  - productivity
+  - utilities
+resource:
+  memory: 67108864
+  permission:
+    storage:
+      enabled: true
+      size: 10485760
+plugins:
+  tools:
+    - provider/crystalflow.yaml
+meta:
+  version: 0.0.2
+  minimum_dify_version: 1.14.2
+  arch:
+    - amd64
+    - arm64
+  runner:
+    language: python
+    version: "3.12"
+    entrypoint: main
+privacy: PRIVACY.md

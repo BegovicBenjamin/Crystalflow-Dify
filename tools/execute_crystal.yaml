@@ -1,0 +1,79 @@
+identity:
+  name: execute_crystal
+  author: begovicbenjamin
+  label:
+    en_US: Execute crystal
+description:
+  human:
+    en_US: Run an active deterministic crystal against JSON input without calling a model.
+  llm: >-
+    Execute a known deterministic routine before recomputing the task. A hit returns canonical JSON
+    without any model call inside CrystalFlow. A miss or invalid_input must be handled by the
+    surrounding workflow's fallback branch.
+parameters:
+  - name: namespace
+    type: string
+    required: true
+    default: default
+    form: form
+    label:
+      en_US: Namespace
+    human_description:
+      en_US: Must match the namespace used when the crystal was created.
+  - name: crystal_name
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Crystal name
+    human_description:
+      en_US: Stable name of the deterministic routine.
+    llm_description: Exact crystal task key to execute.
+  - name: input_json
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Input JSON
+    human_description:
+      en_US: Strict JSON value that satisfies the crystal's input schema.
+    llm_description: Serialize only the structured inputs needed by the named crystal as strict JSON.
+  - name: version
+    type: number
+    required: false
+    default: 0
+    min: 0
+    form: form
+    label:
+      en_US: Version
+    human_description:
+      en_US: Zero runs the active version. Set a positive version only for controlled replay.
+output_schema:
+  type: object
+  properties:
+    status:
+      type: string
+      description: hit, miss, invalid_input, disabled, or error
+    fallback_required:
+      type: boolean
+    crystal_name:
+      type: string
+    version:
+      type: integer
+    program_hash:
+      type: string
+    result_json:
+      type: string
+      description: Canonical JSON output on a hit
+    receipt:
+      type: string
+      description: Hash binding engine, program, input, and output
+    reason_code:
+      type: string
+    estimated_tokens_avoided:
+      type: integer
+    telemetry_recorded:
+      type: boolean
+extra:
+  python:
+    source: tools/execute_crystal.py
