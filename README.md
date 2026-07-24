@@ -91,6 +91,20 @@ should be signed with the Dify Plugin CLI.
 The project intentionally pins the Dify SDK to the `0.9.x` compatibility line and commits
 `uv.lock`.
 
+### Publish from GitHub without a local CLI
+
+After pushing the repository, open **Actions → Package and release → Run workflow**. Keep the tag
+at `v0.1.0`. The workflow reruns every release check, downloads the pinned official Dify CLI, builds
+`crystalflow.difypkg`, and attaches it to the matching GitHub Release.
+
+In Dify, choose **Plugins → Install Plugin → From GitHub**, enter this repository URL, and select
+the released version.
+
+The release package is unsigned. Dify Cloud manages signatures centrally. Self-hosted Dify
+enforces signature verification by default, so its administrator must follow
+[Dify's third-party signing guide](https://docs.dify.ai/en/develop-plugin/publishing/standards/third-party-signature-verification)
+or explicitly change that installation's verification policy.
+
 ## Configure a fast path
 
 1. Add `execute_crystal` as the first tool node for a known stable task.
