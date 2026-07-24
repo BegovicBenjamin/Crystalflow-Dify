@@ -223,6 +223,20 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(len(record_keys), 2)
         self.assertTrue(all(isinstance(self.kv.values[key], bytes) for key in record_keys))
 
+    def test_registering_a_retired_program_creates_a_new_draft_version(self) -> None:
+        first = self.register()
+        self.registry.retire("invoice.total.v1", first.version)
+
+        replacement = self.register()
+
+        self.assertTrue(replacement.created)
+        self.assertEqual(replacement.version, 2)
+        self.assertEqual(replacement.state, Lifecycle.DRAFT)
+        self.assertEqual(
+            self.registry.get("invoice.total.v1", first.version).state,
+            Lifecycle.RETIRED,
+        )
+
     def test_activation_is_test_gated_and_only_alias_mutates(self) -> None:
         first = self.register(value="one")
         record_key = f"tenant_a:v1:record:{first.content_hash}"

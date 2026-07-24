@@ -571,7 +571,7 @@ class Registry:
         *,
         description: str | None = None,
     ) -> CrystalVersion:
-        """Register a draft, returning an existing same-hash version idempotently."""
+        """Register a draft, reusing an existing non-retired same-hash version."""
 
         self.validate_name(name)
         normalized_description = self._normalize_description(description)
@@ -605,7 +605,10 @@ class Registry:
             alias = self._load_alias(name, required=False)
             if alias is not None:
                 for existing_entry in alias["versions"]:
-                    if existing_entry["program_hash"] == program_hash:
+                    if (
+                        existing_entry["program_hash"] == program_hash
+                        and existing_entry["state"] != Lifecycle.RETIRED.value
+                    ):
                         self._ensure_indexed(name)
                         result = self._materialize(alias, existing_entry)
                         return replace(result, created=False)

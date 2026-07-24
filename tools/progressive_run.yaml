@@ -1,0 +1,149 @@
+identity:
+  name: progressive_run
+  author: begovicbenjamin
+  label:
+    en_US: Progressive run
+description:
+  human:
+    en_US: Use one model-backed node that learns validated deterministic fast paths for repeated JSON tasks.
+  llm: >-
+    Run a configured deterministic task. CrystalFlow first tries an active crystal at zero model
+    tokens. On a miss it invokes the selected workspace LLM, returns that JSON result, and can retain
+    the example for bounded progressive learning. Only validated Crystal IR can become a fast path.
+parameters:
+  - name: namespace
+    type: string
+    required: true
+    default: default
+    form: form
+    label:
+      en_US: Namespace
+    human_description:
+      en_US: Stable application namespace that isolates this node's crystals and examples.
+  - name: task_key
+    type: string
+    required: true
+    form: form
+    label:
+      en_US: Task key
+    human_description:
+      en_US: Stable key for one repeated task, for example calculate_invoice_total.
+  - name: task_description
+    type: string
+    required: true
+    form: form
+    label:
+      en_US: Task description
+    human_description:
+      en_US: Explain the exact JSON transformation this node should perform.
+  - name: input_json
+    type: string
+    required: true
+    form: llm
+    label:
+      en_US: Input JSON
+    human_description:
+      en_US: Connect a workflow variable containing the structured input as strict JSON.
+    llm_description: Serialize the current structured task input as one strict JSON value.
+  - name: model
+    type: model-selector
+    scope: llm
+    required: true
+    form: form
+    label:
+      en_US: Fallback and learning model
+    human_description:
+      en_US: Used only on misses and when enough examples are available to propose a crystal.
+  - name: learning_enabled
+    type: boolean
+    required: false
+    default: false
+    form: form
+    label:
+      en_US: Enable learning
+    human_description:
+      en_US: Opt in to retaining bounded JSON input/output examples for this task.
+  - name: min_examples
+    type: number
+    required: true
+    default: 5
+    min: 1
+    max: 50
+    form: form
+    label:
+      en_US: Examples before crystallizing
+    human_description:
+      en_US: Successful fallback examples required before proposing a deterministic crystal.
+  - name: learning_policy
+    type: select
+    required: true
+    default: draft
+    form: form
+    label:
+      en_US: Learning policy
+    human_description:
+      en_US: Keep validated crystals as drafts for review or activate them automatically.
+    options:
+      - value: draft
+        label:
+          en_US: Draft for review
+      - value: auto_activate
+        label:
+          en_US: Auto-activate after observed tests (low-risk only)
+  - name: estimated_tokens_per_run
+    type: number
+    required: false
+    default: 0
+    min: 0
+    max: 1000000
+    form: form
+    label:
+      en_US: Estimated tokens per fallback
+    human_description:
+      en_US: Optional baseline used only to estimate tokens avoided by future crystal hits.
+output_schema:
+  type: object
+  properties:
+    status:
+      type: string
+      description: hit, fallback, or error
+    fallback_required:
+      type: boolean
+      description: True only when this node could not return a result
+    result_json:
+      type: string
+      description: Canonical JSON result from the active crystal or selected model
+    result_text:
+      type: string
+      description: Plain string result when applicable, otherwise the canonical JSON result
+    learning_status:
+      type: string
+    example_count:
+      type: integer
+    crystal_name:
+      type: string
+    version:
+      type: integer
+    program_hash:
+      type: string
+    receipt:
+      type: string
+    llm_calls:
+      type: integer
+    prompt_tokens:
+      type: integer
+    completion_tokens:
+      type: integer
+    model_tokens_used:
+      type: integer
+      description: Actual SDK-reported tokens used by fallback and builder calls in this run
+    estimated_tokens_avoided:
+      type: integer
+      description: Configured savings estimate on a crystal hit
+    telemetry_recorded:
+      type: boolean
+    message:
+      type: string
+extra:
+  python:
+    source: tools/progressive_run.py

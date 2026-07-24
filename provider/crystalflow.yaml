@@ -4,12 +4,13 @@ identity:
   label:
     en_US: CrystalFlow
   description:
-    en_US: Build, validate, store, and run deterministic crystals without executing arbitrary code.
+    en_US: Learn deterministic routines on cold paths and execute warm paths without a model call.
   icon: icon.svg
   tags:
     - productivity
     - utilities
 tools:
+  - tools/progressive_run.yaml
   - tools/crystallize.yaml
   - tools/execute_crystal.yaml
   - tools/crystal_status.yaml

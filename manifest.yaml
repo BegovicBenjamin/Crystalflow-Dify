@@ -1,4 +1,4 @@
-version: 0.1.0
+version: 0.2.0
 type: plugin
 author: begovicbenjamin
 name: crystalflow
@@ -7,13 +7,16 @@ label:
 created_at: "2026-07-24T11:40:00Z"
 icon: icon.svg
 description:
-  en_US: Turn proven, repetitive chatbot work into versioned deterministic JSON programs.
+  en_US: Learn validated deterministic routines on LLM misses, then reuse them without model calls.
 tags:
   - productivity
   - utilities
 resource:
   memory: 67108864
   permission:
+    model:
+      enabled: true
+      llm: true
     storage:
       enabled: true
       size: 10485760

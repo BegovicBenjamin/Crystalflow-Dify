@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -20,6 +22,29 @@ def load_yaml(path: Path) -> dict:
 
 
 class PluginContractTests(unittest.TestCase):
+    def test_official_sdk_loads_plugin_in_a_fresh_process(self) -> None:
+        script = "\n".join(
+            (
+                "from dify_plugin import DifyPluginEnv",
+                "from dify_plugin.core.plugin_registration import PluginRegistration",
+                "registration = PluginRegistration(DifyPluginEnv(_env_file=None))",
+                "assert 'progressive_run' in registration.tools_mapping['crystalflow'][2]",
+            )
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
+        )
+
     def test_official_sdk_loads_the_complete_plugin(self) -> None:
         registration = PluginRegistration(DifyPluginEnv())
         self.assertEqual(registration.configuration.name, "crystalflow")
@@ -30,6 +55,7 @@ class PluginContractTests(unittest.TestCase):
                 "crystal_status",
                 "crystallize",
                 "execute_crystal",
+                "progressive_run",
                 "retire_crystal",
             },
         )
@@ -48,11 +74,11 @@ class PluginContractTests(unittest.TestCase):
         self.assertEqual(manifest["meta"]["runner"]["language"], "python")
         self.assertEqual(manifest["meta"]["runner"]["version"], "3.12")
         self.assertEqual(manifest["meta"]["minimum_dify_version"], "1.14.2")
-        self.assertEqual(
-            set(manifest["resource"]["permission"]),
-            {"storage"},
-            "the MVP must keep least-privilege storage-only permissions",
-        )
+        permission = manifest["resource"]["permission"]
+        self.assertEqual(set(permission), {"model", "storage"})
+        self.assertTrue(permission["model"]["enabled"])
+        self.assertTrue(permission["model"]["llm"])
+        self.assertTrue(permission["storage"]["enabled"])
 
         provider_paths = manifest["plugins"]["tools"]
         self.assertEqual(len(provider_paths), 1)
@@ -84,6 +110,7 @@ class PluginContractTests(unittest.TestCase):
                 "crystal_status",
                 "crystallize",
                 "execute_crystal",
+                "progressive_run",
                 "retire_crystal",
             },
         )
@@ -104,6 +131,7 @@ class PluginContractTests(unittest.TestCase):
             "crystal_status",
             "crystallize",
             "execute_crystal",
+            "progressive_run",
             "retire_crystal",
         ):
             with self.subTest(name=name):
