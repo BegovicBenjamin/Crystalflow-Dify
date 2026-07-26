@@ -1,19 +1,50 @@
 # CrystalFlow for Dify
 
-CrystalFlow gives a Dify Workflow one model-backed node that can turn a repeated, structured task
-into a small deterministic program—a **crystal**—and reuse it without calling the model again.
+CrystalFlow progressively replaces repeated LLM work with small deterministic **crystals**. There
+are two complementary modes:
 
-A crystal is deliberately narrow:
+- **CrystalFlow Adaptive** sits in a normal Dify Agent. It learns repeated successful routes to
+  administrator-approved, read-only tools and invokes those tools directly on future exact matches.
+- **Progressive run** turns a repeated structured JSON transformation into validated Crystal IR.
+
+Users do not need CrystalFlow-specific prompts. The Agent starts with its normal model, observes
+successful eligible tool calls, and activates a route after the configured number of consistent
+repetitions. A route stores the tool and its arguments—not the answer—so live data is still fetched
+on every hit.
+
+## Quick start: adaptive chat
+
+1. Add an **Agent** node to a Chatflow or Workflow.
+2. Choose **CrystalFlow Adaptive** as its Agent Strategy.
+3. Select the normal model and tools.
+4. Under **Safe direct-answer tools**, select only read-only tools whose output is ready to show to the
+   user.
+5. Leave the default activation threshold at five and chat normally.
+
+For an SOP workflow tool, the progression looks like this:
 
 ```text
-canonical JSON input -> Crystal IR v1 -> canonical JSON output
+First five matching requests:
+user query -> Agent LLM -> get_sop(sop_id="SOP-42") -> current SOP content
+
+Later exact matches:
+user query -> route crystal -> get_sop(sop_id="SOP-42") -> current SOP content
+                              no Agent LLM call
 ```
 
-Good candidates include pricing rules, scoring, validation, normalization, payload construction,
-fixed templates, and rule-based classification. Open-ended writing, subjective judgment, live
-research, and side effects are not crystals.
+The fast-path tool should be answer-ready. A useful Knowledge Base bridge is a published
+Workflow-as-Tool with a stable `sop_id` or query input, a Knowledge Retrieval node, a deterministic
+Template node, and an Output node. If that workflow contains its own model, CrystalFlow can avoid
+the Agent's model call but cannot claim that the complete request used zero model tokens.
 
-## Quick start: one node
+Safe automatic routing starts with normalized exact requests. `What is in SOP-42?` can become a
+route. A context-dependent request such as `What is in that SOP?` must keep using the model unless a
+stable selected SOP identifier is supplied as routing context. The same rule applies to personal
+requests such as `Show my PTO balance`. CrystalFlow intentionally does not use semantic similarity
+on the warm path: an embedding or classifier would consume AI resources and could silently route an
+ambiguous request to the wrong tool.
+
+## Structured workflow mode: Progressive run
 
 Install CrystalFlow, create a Workflow or Chatflow, and add **Progressive run**:
 
@@ -72,29 +103,31 @@ model and therefore cannot guarantee a zero-token route.
 
 ## Where the token savings come from
 
-`progressive_run` owns both paths:
+Both integrations own their fast path before any model call:
 
 ```mermaid
 flowchart LR
-    A[Structured request] --> B[progressive_run]
-    B -->|active crystal hit| C[Return deterministic result]
-    B -->|miss / invalid| D[Selected Dify LLM]
-    D --> E[Return result and optionally retain example]
-    E --> F[Generate and test candidate after threshold]
-    F -. future matching requests .-> B
+    A[Chat request] --> B[CrystalFlow Adaptive]
+    B -->|exact route hit| C[Invoke approved tool directly]
+    B -->|miss / invalid| D[Normal Function Calling LLM]
+    D --> E[Invoke tool and observe successful route]
+    E -. consistent repetitions .-> B
 ```
 
-The advanced `execute_crystal` tool also never invokes a model. When it returns `hit`, a workflow
-can answer directly; non-hits require a surrounding fallback.
+An adaptive hit reports zero **Agent LLM** tokens. It still invokes the current tool, so its output
+and authorization remain live. If that tool internally invokes a model, embedding model, or
+reranker, those downstream resources are not zero and must be measured separately.
 
-An Agent still spends model tokens deciding to call a tool. Agent use can save repeated reasoning
-and generation, but only a Workflow/Chatflow that invokes `progressive_run` before an Agent or LLM
-can produce a genuinely zero-model-token hit.
+`progressive_run` provides the equivalent pre-model branch for structured computation. The
+advanced `execute_crystal` tool also never invokes a model; non-hits require a surrounding
+fallback.
 
 ## Safety boundary
 
-CrystalFlow does **not** run model-authored Python or JavaScript. A chatbot may propose only
-Crystal IR: a closed JSON expression tree interpreted by the plugin.
+CrystalFlow does **not** run model-authored Python or JavaScript. Compute crystals use Crystal IR,
+a closed JSON expression tree interpreted by the plugin. Route crystals are more restricted: they
+contain only an exact request fingerprint, one approved tool identity, validated JSON arguments,
+and a tool-contract fingerprint.
 
 - No `eval`, `exec`, imports, subprocesses, reflection, or dynamic calls
 - No network, filesystem, environment, clock, randomness, or locale access
@@ -102,11 +135,18 @@ Crystal IR: a closed JSON expression tree interpreted by the plugin.
 - Bounded AST depth, operation budget, collection sizes, and output size
 - Canonical JSON and SHA-256 program/execution receipts
 - Immutable versions with recoverable retirement
-- Only Dify workspace model and KV storage permissions; no credentials requested directly
+- Route conflicts are quarantined and changed tool contracts invalidate old routes
+- Route hits resolve the currently configured tool and runtime parameters; credentials are not
+  stored in a crystal
+- Only Dify workspace model, tool, and KV storage permissions; no credentials requested directly
 
 The same program hash, engine version, and canonical input produce the same output bytes.
 
-## Tools
+## Agent Strategy and tools
+
+| Integration | Purpose |
+|---|---|
+| `CrystalFlow Adaptive` | Normal Function Calling with automatic exact route learning and a pre-model fast path for approved read-only, answer-ready tools |
 
 | Tool | Purpose |
 |---|---|
@@ -153,7 +193,7 @@ The project intentionally pins the Dify SDK to the `0.9.x` compatibility line an
 ### Publish from GitHub without a local CLI
 
 After pushing the repository, open **Actions → Package and release → Run workflow**. Keep the tag
-at `v0.2.0`. The workflow reruns every release check, downloads the pinned official Dify CLI, builds
+at `v0.3.0`. The workflow reruns every release check, downloads the pinned official Dify CLI, builds
 `crystalflow.difypkg`, and attaches it to the matching GitHub Release.
 
 In Dify, choose **Plugins → Install Plugin → From GitHub**, enter this repository URL, and select
@@ -199,23 +239,26 @@ See [Crystal IR v1](docs/CRYSTAL_IR_V1.md) for the language and
 
 ## Lifecycle and current scope
 
-Version 0.2.0 implements:
+CrystalFlow has two independent evidence and execution paths:
 
 ```text
-cold model result -> opted-in bounded examples -> IR proposal -> exact validation
-                  -> reviewed draft / explicit auto-activation -> deterministic hits
+Adaptive Agent:
+successful approved tool route -> repetition counter -> active exact route -> direct tool hits
+
+Progressive Run:
+cold model result -> opted-in examples -> IR proposal -> exact validation -> compute hits
 ```
 
-The progressive node learns only within its configured task key. It does not mine unrelated
-conversation history, semantically guess which task a free-form prompt represents, or execute
-model-authored Python/JavaScript. Repeating an input with conflicting model outputs quarantines
-learning for that task instead of silently choosing one answer.
+The adaptive strategy stores request fingerprints and action metadata, not answers or conversation
+history. It begins with normalized exact matching; it does not semantically guess that a new
+paraphrase has the same meaning. The progressive node remains scoped to its configured task key.
+Conflicting observations quarantine learning instead of silently selecting a majority.
 
 Passing retained examples proves consistency with those examples, not correctness for every
 possible input. **Draft for review** is the safe default. Explicit auto-activation is intended only
-for low-risk transformations where the workflow owner accepts that limitation. Version 0.2.0 does
-not yet provide hidden holdout tests, a shadow evaluation window, semantic routing, or a bulk-purge
-tool.
+for low-risk transformations where the workflow owner accepts that limitation. CrystalFlow does
+not yet provide generalized natural-language route patterns, semantic warm-path routing, hidden
+holdout tests, a shadow evaluation window, or a bulk-purge tool.
 
 Dify's documented KV interface has no enumeration transaction or compare-and-swap operation.
 CrystalFlow therefore stores immutable version records, maintains a best-effort catalog index, and
@@ -228,7 +271,12 @@ transactional external store.
 Programs and their test vectors are stored because they are the audit evidence for a version.
 Normal `execute_crystal` inputs and outputs are not stored. `progressive_run` retains a bounded set
 of JSON inputs and model outputs only when **Enable learning** is explicitly enabled. Cold-path
-inputs and retained examples are sent to the selected Dify model. See [PRIVACY.md](PRIVACY.md).
+inputs and retained examples are sent to the selected Dify model.
+
+The adaptive strategy stores a normalized request hash, app/instruction/tool-contract
+fingerprints, the approved tool identity, its model-supplied JSON arguments, consistency counters,
+and aggregate hit/savings estimates. It does not store tool output, credentials, retrieved SOP
+content, or complete conversation history. See [PRIVACY.md](PRIVACY.md).
 
 ## Test
 

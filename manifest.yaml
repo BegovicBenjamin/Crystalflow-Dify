@@ -1,4 +1,4 @@
-version: 0.2.0
+version: 0.3.0
 type: plugin
 author: begovicbenjamin
 name: crystalflow
@@ -7,7 +7,7 @@ label:
 created_at: "2026-07-24T11:40:00Z"
 icon: icon.svg
 description:
-  en_US: Learn validated deterministic routines on LLM misses, then reuse them without model calls.
+  en_US: Learn validated compute routines and safe tool routes, then reuse them without Agent model calls.
 tags:
   - productivity
   - utilities
@@ -17,12 +17,16 @@ resource:
     model:
       enabled: true
       llm: true
+    tool:
+      enabled: true
     storage:
       enabled: true
       size: 10485760
 plugins:
   tools:
     - provider/crystalflow.yaml
+  agent_strategies:
+    - provider/crystalflow_agent.yaml
 meta:
   version: 0.0.2
   minimum_dify_version: 1.14.2

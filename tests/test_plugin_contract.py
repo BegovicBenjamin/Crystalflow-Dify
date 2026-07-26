@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 import yaml
-from dify_plugin import DifyPluginEnv, Tool, ToolProvider
+from dify_plugin import AgentStrategy, DifyPluginEnv, Tool, ToolProvider
 from dify_plugin.core.plugin_registration import PluginRegistration
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +48,11 @@ class PluginContractTests(unittest.TestCase):
     def test_official_sdk_loads_the_complete_plugin(self) -> None:
         registration = PluginRegistration(DifyPluginEnv())
         self.assertEqual(registration.configuration.name, "crystalflow")
+        self.assertIn("crystalflow_agent", registration.agent_strategies_mapping)
+        self.assertIn(
+            "progressive_function_calling",
+            registration.agent_strategies_mapping["crystalflow_agent"][1],
+        )
         self.assertEqual(
             set(registration.tools_mapping["crystalflow"][2]),
             {
@@ -75,9 +80,10 @@ class PluginContractTests(unittest.TestCase):
         self.assertEqual(manifest["meta"]["runner"]["version"], "3.12")
         self.assertEqual(manifest["meta"]["minimum_dify_version"], "1.14.2")
         permission = manifest["resource"]["permission"]
-        self.assertEqual(set(permission), {"model", "storage"})
+        self.assertEqual(set(permission), {"model", "storage", "tool"})
         self.assertTrue(permission["model"]["enabled"])
         self.assertTrue(permission["model"]["llm"])
+        self.assertTrue(permission["tool"]["enabled"])
         self.assertTrue(permission["storage"]["enabled"])
 
         provider_paths = manifest["plugins"]["tools"]
@@ -115,6 +121,19 @@ class PluginContractTests(unittest.TestCase):
             },
         )
 
+        agent_provider_paths = manifest["plugins"]["agent_strategies"]
+        self.assertEqual(len(agent_provider_paths), 1)
+        agent_provider = load_yaml(ROOT / agent_provider_paths[0])
+        self.assertEqual(agent_provider["identity"]["author"], manifest["author"])
+        self.assertEqual(len(agent_provider["strategies"]), 1)
+        strategy = load_yaml(ROOT / agent_provider["strategies"][0])
+        self.assertEqual(
+            strategy["identity"]["name"],
+            "progressive_function_calling",
+        )
+        self.assertIn("history-messages", strategy["features"])
+        self.assertTrue((ROOT / strategy["extra"]["python"]["source"]).is_file())
+
     def test_sdk_can_import_every_entry_point(self) -> None:
         provider_module = importlib.import_module("provider.crystalflow")
         self.assertTrue(
@@ -142,6 +161,16 @@ class PluginContractTests(unittest.TestCase):
                         for value in vars(module).values()
                     )
                 )
+
+        strategy_module = importlib.import_module("strategies.progressive_function_calling")
+        self.assertTrue(
+            any(
+                isinstance(value, type)
+                and issubclass(value, AgentStrategy)
+                and value is not AgentStrategy
+                for value in vars(strategy_module).values()
+            )
+        )
 
     def test_marketplace_packaging_contract(self) -> None:
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
