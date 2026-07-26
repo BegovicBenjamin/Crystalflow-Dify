@@ -1,175 +1,106 @@
 # CrystalFlow for Dify
 
-CrystalFlow progressively replaces repeated LLM work with small deterministic **crystals**. There
-are two complementary modes:
+CrystalFlow Adaptive learns repeated successful Agent tool calls and turns them into deterministic
+routes. After the same request has produced the same approved tool call enough times, later exact
+matches invoke that tool directly and skip the Agent model.
 
-- **CrystalFlow Adaptive** sits in a normal Dify Agent. It learns repeated successful routes to
-  administrator-approved, read-only tools and invokes those tools directly on future exact matches.
-- **Progressive run** turns a repeated structured JSON transformation into validated Crystal IR.
-
-Users do not need CrystalFlow-specific prompts. The Agent starts with its normal model, observes
-successful eligible tool calls, and activates a route after the configured number of consistent
-repetitions. A route stores the tool and its arguments—not the answer—so live data is still fetched
-on every hit.
-
-## Quick start: adaptive chat
-
-1. Add an **Agent** node to a Chatflow or Workflow.
-2. Choose **CrystalFlow Adaptive** as its Agent Strategy.
-3. Select the normal model and tools.
-4. Under **Safe direct-answer tools**, select only read-only tools whose output is ready to show to the
-   user.
-5. Leave the default activation threshold at five and chat normally.
-
-For an SOP workflow tool, the progression looks like this:
+Users chat normally; they do not need CrystalFlow-specific prompts. A route stores the selected tool
+and validated arguments, not the answer, so live data is fetched on every hit.
 
 ```text
-First five matching requests:
-user query -> Agent LLM -> get_sop(sop_id="SOP-42") -> current SOP content
+First matching requests:
+user query -> Agent model -> get_sop(sop_id="SOP-42") -> current SOP content
 
 Later exact matches:
 user query -> route crystal -> get_sop(sop_id="SOP-42") -> current SOP content
-                              no Agent LLM call
+                              no Agent model call
 ```
 
-The fast-path tool should be answer-ready. A useful Knowledge Base bridge is a published
-Workflow-as-Tool with a stable `sop_id` or query input, a Knowledge Retrieval node, a deterministic
-Template node, and an Output node. If that workflow contains its own model, CrystalFlow can avoid
-the Agent's model call but cannot claim that the complete request used zero model tokens.
+## Install and configure
 
-Safe automatic routing starts with normalized exact requests. `What is in SOP-42?` can become a
-route. A context-dependent request such as `What is in that SOP?` must keep using the model unless a
-stable selected SOP identifier is supplied as routing context. The same rule applies to personal
-requests such as `Show my PTO balance`. CrystalFlow intentionally does not use semantic similarity
-on the warm path: an embedding or classifier would consume AI resources and could silently route an
-ambiguous request to the wrong tool.
+1. Install `crystalflow.difypkg` from **Plugins → Install via local file**.
+2. Add an **Agent** node to a Chatflow or Workflow.
+3. Choose **CrystalFlow Adaptive** as its Agent Strategy.
+4. Select the model and tools the Agent normally uses.
+5. Under **Safe direct-answer tools**, select only read-only tools whose output is ready to return
+   directly to the user.
+6. Keep the default activation threshold of five for normal use.
 
-## Structured workflow mode: Progressive run
+The `.difypkg` declares only the Agent Strategy plugin type. Dify does not permit Agent Strategy and
+Tool providers in the same package. The manifest's tool permission lets the strategy invoke tools
+selected in the Agent node; it does not register a second plugin type.
 
-Install CrystalFlow, create a Workflow or Chatflow, and add **Progressive run**:
+## Test automatic crystallization
 
-```text
-Structured JSON input -> Progressive run -> Answer / End
-```
+For a quick test, use a read-only Workflow-as-Tool such as `get_sop`:
 
-Configure these fields once on the node:
+1. Set **Repetitions before activation** to `2`.
+2. Put `get_sop` in both **Tools** and **Safe direct-answer tools**.
+3. Ask exactly `What is in SOP-42?` three times in the same app and conversation context.
+4. The first two requests should use the cold model path.
+5. The third request should report a route hit with `llm_calls: 0`.
 
-- **Task key:** a stable name such as `invoice_total`
-- **Task description:** the exact JSON transformation and valid domain
-- **Model:** any LLM already configured in the Dify workspace
-- **Enable learning:** opt in to retaining bounded examples for this task
-- **Examples before crystallizing:** five by default
-- **Learning policy:** create a reviewed draft, or explicitly auto-activate for low-risk tasks
+Use a stable tool input such as `sop_id`. A useful Knowledge Base bridge is a published
+Workflow-as-Tool containing a Knowledge Retrieval node, deterministic formatting, and an Output
+node.
 
-Connect the current JSON input to `input_json`. On a cold request, the selected model returns the
-JSON result. After enough distinct examples, the same model proposes Crystal IR; CrystalFlow
-validates it against every retained example and stores a draft or active version according to the
-policy. On future compatible requests, the active crystal returns `result_json` without a model
-call.
+The fast-path tool must be answer-ready. If the selected tool returns raw search results that still
+need model summarization, it should not be allowlisted. If the tool internally invokes a model,
+embedding model, or reranker, CrystalFlow saves the Agent model call but cannot make the complete
+request zero-token.
 
-CrystalFlow binds each stored candidate to a fingerprint of the task key and task description.
-Changing either starts a separate learning record instead of silently running an older
-transformation. The node exposes that bound identifier as `crystal_name` for advanced lifecycle
-tools.
+## Matching behavior
 
-The node reports `status: fallback` while the model handles a cold request and `status: hit` when a
-crystal handles it. `model_tokens_used` is actual SDK-reported usage for the current node run and is
-zero on a hit.
+The current release intentionally uses normalized exact requests. `What is in SOP-42?` can become a
+route after consistent observations.
 
-### Try it in three runs
+A context-dependent request such as `What is in that SOP?` stays on the model path unless the Agent
+node receives a stable routing context such as `selected_sop_id`. The same applies to requests such
+as `Show my PTO balance`, which need a stable user or tenant binding.
 
-For a quick, low-risk demo, use:
+Routes are scoped to the app, instruction, available tool set, and optional routing context.
+Changing a tool contract invalidates its old route. Conflicting tool choices or arguments quarantine
+the route instead of guessing.
 
-- **Namespace:** `quick_test_v02`
-- **Task key:** `add_values`
-- **Task description:** `Given integer x and y, return exactly {"total": x + y}.`
-- **Enable learning:** on
-- **Examples before crystallizing:** `2`
-- **Learning policy:** `Auto-activate after observed tests (low-risk demo only)`
-- **Input JSON:** connect a text input containing strict JSON
-
-Run the workflow with `{"x":2,"y":3}`, then `{"x":5,"y":7}`. Those cold runs should report
-`status: fallback`; the second can also report `learning_status: candidate_active`. Run it a third
-time with `{"x":8,"y":9}`. A successfully generalized crystal reports `status: hit`,
-`result_json: {"total":17}`, and `model_tokens_used: 0`. If candidate generation is rejected, the
-node safely keeps using the selected model and explains the state in `learning_status`.
-
-Use the default threshold of five and **Draft for review** for production work. Auto-activation
-checks consistency with observed examples; it does not prove correctness for unseen inputs.
-
-CrystalFlow needs a stable task key and structured input to make the warm path deterministic.
-Discovering intent or extracting fields from arbitrary natural-language chat generally requires a
-model and therefore cannot guarantee a zero-token route.
-
-## Where the token savings come from
-
-Both integrations own their fast path before any model call:
+## Where token savings come from
 
 ```mermaid
 flowchart LR
     A[Chat request] --> B[CrystalFlow Adaptive]
     B -->|exact route hit| C[Invoke approved tool directly]
-    B -->|miss / invalid| D[Normal Function Calling LLM]
+    B -->|miss or invalid| D[Normal function-calling model]
     D --> E[Invoke tool and observe successful route]
     E -. consistent repetitions .-> B
 ```
 
-An adaptive hit reports zero **Agent LLM** tokens. It still invokes the current tool, so its output
-and authorization remain live. If that tool internally invokes a model, embedding model, or
-reranker, those downstream resources are not zero and must be measured separately.
-
-`progressive_run` provides the equivalent pre-model branch for structured computation. The
-advanced `execute_crystal` tool also never invokes a model; non-hits require a surrounding
-fallback.
+On a valid hit, CrystalFlow reports zero Agent LLM calls. Tool output and authorization remain live
+because the current configured tool is still invoked.
 
 ## Safety boundary
 
-CrystalFlow does **not** run model-authored Python or JavaScript. Compute crystals use Crystal IR,
-a closed JSON expression tree interpreted by the plugin. Route crystals are more restricted: they
-contain only an exact request fingerprint, one approved tool identity, validated JSON arguments,
-and a tool-contract fingerprint.
+Route crystals contain only:
 
-- No `eval`, `exec`, imports, subprocesses, reflection, or dynamic calls
-- No network, filesystem, environment, clock, randomness, or locale access
-- Strict input/output schemas and exact test vectors
-- Bounded AST depth, operation budget, collection sizes, and output size
-- Canonical JSON and SHA-256 program/execution receipts
-- Immutable versions with recoverable retirement
-- Route conflicts are quarantined and changed tool contracts invalidate old routes
-- Route hits resolve the currently configured tool and runtime parameters; credentials are not
-  stored in a crystal
-- Only Dify workspace model, tool, and KV storage permissions; no credentials requested directly
+- a request and scope fingerprint;
+- one approved tool identity;
+- schema-validated JSON arguments;
+- a tool-contract fingerprint; and
+- aggregate observation, hit, and estimated-savings counters.
 
-The same program hash, engine version, and canonical input produce the same output bytes.
-
-## Agent Strategy and tools
-
-| Integration | Purpose |
-|---|---|
-| `CrystalFlow Adaptive` | Normal Function Calling with automatic exact route learning and a pre-model fast path for approved read-only, answer-ready tools |
-
-| Tool | Purpose |
-|---|---|
-| `progressive_run` | One-node experience: execute a crystal, invoke the selected model on a miss, retain opted-in examples, and generate a tested candidate |
-| `crystallize` | Validate a Crystal IR program against exact tests, save an immutable version, and optionally activate it |
-| `execute_crystal` | Run the active version and return a hit/miss contract suitable for a conditional workflow branch |
-| `crystal_status` | List the workspace-local catalog or inspect one crystal and its savings telemetry |
-| `activate_crystal` | Promote an exact test-passing version after its name, version, and hash are approved |
-| `retire_crystal` | Recoverably disable an obsolete or unsafe version after explicit name confirmation |
-
-The five advanced lifecycle tools are for controlled builder/admin workflows. Do not expose their
-mutation operations to a general-purpose Agent: because a model can populate both a target and its
-confirmation, those checks prevent mistakes and stale updates but cannot prove user approval.
+CrystalFlow does not run model-authored Python or JavaScript. It does not store tool credentials,
+tool output, retrieved SOP content, the original request, or complete conversation history. Only
+read-only, direct-answer tools explicitly selected by the workflow author are eligible for the warm
+path.
 
 ## Requirements
 
 - Dify 1.14.2 or newer
-- An LLM configured in the Dify workspace for cold requests and candidate generation
+- an LLM configured in the Dify workspace for cold requests
+- at least one suitable read-only tool for routes that should crystallize
 
-Python 3.12, the Dify Plugin CLI, and [`uv`](https://docs.astral.sh/uv/) are needed only for plugin
-development—not to install or use the GitHub release in Dify.
+Python 3.12, the Dify Plugin CLI, and [`uv`](https://docs.astral.sh/uv/) are needed only for
+development.
 
-## Develop and install
+## Develop and package
 
 ```bash
 uv sync --frozen
@@ -178,115 +109,35 @@ cp .env.example .env
 uv run python -m main
 ```
 
-For a local package:
+Run the checks and build a local package:
 
 ```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
 dify plugin package .
 ```
 
 Install the resulting `.difypkg` from **Plugins → Install via local file**. Production packages
 should be signed with the Dify Plugin CLI.
 
-The project intentionally pins the Dify SDK to the `0.9.x` compatibility line and commits
-`uv.lock`.
+The project pins the Dify SDK to the `0.9.x` compatibility line and commits `uv.lock`.
 
-### Publish from GitHub without a local CLI
+### Publish from GitHub
 
-After pushing the repository, open **Actions → Package and release → Run workflow**. Keep the tag
-at `v0.3.0`. The workflow reruns every release check, downloads the pinned official Dify CLI, builds
+After pushing the repository, open **Actions → Package and release → Run workflow** and use tag
+`v0.3.1`. The workflow runs all release checks, downloads the pinned official Dify CLI, builds
 `crystalflow.difypkg`, and attaches it to the matching GitHub Release.
 
-In Dify, choose **Plugins → Install Plugin → From GitHub**, enter this repository URL, and select
-the released version.
-
-The release package is unsigned. Dify Cloud manages signatures centrally. Self-hosted Dify
-enforces signature verification by default, so its administrator must follow
-[Dify's third-party signing guide](https://docs.dify.ai/en/develop-plugin/publishing/standards/third-party-signature-verification)
-or explicitly change that installation's verification policy.
-
-## Advanced explicit fast path
-
-1. Add `execute_crystal` as the first tool node for a known stable task.
-2. Set a non-secret `namespace` in the node's form configuration. Use the same namespace on the
-   admin crystallization node.
-3. Pass a stable `crystal_name` and strict JSON input.
-4. Branch on `status`:
-   - `hit`: parse/use `result_json` and answer directly.
-   - anything else: run the normal LLM path.
-5. Keep downstream side effects in ordinary Dify tool nodes. A crystal may construct their typed
-   payload, but may not perform them.
-
-The namespace is application organization, not an access-control boundary. Dify scopes plugin KV
-storage to a workspace and plugin identity, and records can persist across upgrades or
-reinstallation. Every app with this plugin and namespace can access the same crystals.
-
-## Advanced builder Agent
-
-Give a trusted builder agent the `crystallize` tool and instructions similar to:
-
-> Crystallize only pure, repetitive tasks with structured inputs and exact outputs. Propose Crystal
-> IR v1, include boundary tests, and never encode subjective judgment, secrets, external calls, or
-> side effects. Use `execute_crystal` before recomputing a known crystal. Treat every non-hit as a
-> fallback, not as an answer.
-
-The `activation_policy` and `namespace` are Dify form fields, so the chatbot cannot change them.
-The safe default is `draft`. Promote a reviewed draft with `activate_crystal`, which requires the
-exact program hash. If a builder deliberately selects `activate_after_tests`, all supplied tests
-must pass before a version can become active.
-
-See [Crystal IR v1](docs/CRYSTAL_IR_V1.md) for the language and
-[examples](examples/) for ready-to-run programs and test vectors.
-
-## Lifecycle and current scope
-
-CrystalFlow has two independent evidence and execution paths:
-
-```text
-Adaptive Agent:
-successful approved tool route -> repetition counter -> active exact route -> direct tool hits
-
-Progressive Run:
-cold model result -> opted-in examples -> IR proposal -> exact validation -> compute hits
-```
-
-The adaptive strategy stores request fingerprints and action metadata, not answers or conversation
-history. It begins with normalized exact matching; it does not semantically guess that a new
-paraphrase has the same meaning. The progressive node remains scoped to its configured task key.
-Conflicting observations quarantine learning instead of silently selecting a majority.
-
-Passing retained examples proves consistency with those examples, not correctness for every
-possible input. **Draft for review** is the safe default. Explicit auto-activation is intended only
-for low-risk transformations where the workflow owner accepts that limitation. CrystalFlow does
-not yet provide generalized natural-language route patterns, semantic warm-path routing, hidden
-holdout tests, a shadow evaluation window, or a bulk-purge tool.
-
-Dify's documented KV interface has no enumeration transaction or compare-and-swap operation.
-CrystalFlow therefore stores immutable version records, maintains a best-effort catalog index, and
-serializes mutations within each plugin worker process. For high-availability administration with
-multiple worker processes, use a single admin writer or replace the MVP registry with a
-transactional external store.
+Dify Cloud manages signatures centrally. Self-hosted Dify enforces signature verification by
+default, so its administrator should follow
+[Dify's third-party signing guide](https://docs.dify.ai/en/develop-plugin/publishing/standards/third-party-signature-verification).
 
 ## Data handling
 
-Programs and their test vectors are stored because they are the audit evidence for a version.
-Normal `execute_crystal` inputs and outputs are not stored. `progressive_run` retains a bounded set
-of JSON inputs and model outputs only when **Enable learning** is explicitly enabled. Cold-path
-inputs and retained examples are sent to the selected Dify model.
-
-The adaptive strategy stores a normalized request hash, app/instruction/tool-contract
-fingerprints, the approved tool identity, its model-supplied JSON arguments, consistency counters,
-and aggregate hit/savings estimates. It does not store tool output, credentials, retrieved SOP
-content, or complete conversation history. See [PRIVACY.md](PRIVACY.md).
-
-## Test
-
-```bash
-uv run pytest
-uv run ruff check .
-```
-
-The core engine and registry use only the Python standard library. The Dify SDK is needed only by
-the plugin adapters.
+The strategy stores hashed request and scope identifiers, the approved tool identity,
+model-supplied arguments, tool-contract fingerprints, consistency counters, and aggregate
+hit/savings estimates in Dify's plugin KV storage. See [PRIVACY.md](PRIVACY.md).
 
 ## Support
 

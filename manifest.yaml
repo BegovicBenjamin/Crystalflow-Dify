@@ -1,4 +1,4 @@
-version: 0.3.0
+version: 0.3.1
 type: plugin
 author: begovicbenjamin
 name: crystalflow
@@ -7,7 +7,7 @@ label:
 created_at: "2026-07-24T11:40:00Z"
 icon: icon.svg
 description:
-  en_US: Learn validated compute routines and safe tool routes, then reuse them without Agent model calls.
+  en_US: Learn safe repeated tool routes, then reuse them without Agent model calls.
 tags:
   - productivity
   - utilities
@@ -23,8 +23,6 @@ resource:
       enabled: true
       size: 10485760
 plugins:
-  tools:
-    - provider/crystalflow.yaml
   agent_strategies:
     - provider/crystalflow_agent.yaml
 meta:

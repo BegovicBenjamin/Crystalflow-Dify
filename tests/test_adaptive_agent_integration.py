@@ -211,6 +211,7 @@ class AdaptiveAgentIntegrationTests(unittest.TestCase):
             manifest["plugins"]["agent_strategies"],
             ["provider/crystalflow_agent.yaml"],
         )
+        self.assertEqual(set(manifest["plugins"]), {"agent_strategies"})
         permission = manifest["resource"]["permission"]
         self.assertTrue(permission["model"]["enabled"])
         self.assertTrue(permission["model"]["llm"])

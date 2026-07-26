@@ -28,7 +28,10 @@ class PluginContractTests(unittest.TestCase):
                 "from dify_plugin import DifyPluginEnv",
                 "from dify_plugin.core.plugin_registration import PluginRegistration",
                 "registration = PluginRegistration(DifyPluginEnv(_env_file=None))",
-                "assert 'progressive_run' in registration.tools_mapping['crystalflow'][2]",
+                "assert not registration.tools_mapping",
+                "assert 'crystalflow_agent' in registration.agent_strategies_mapping",
+                "assert 'progressive_function_calling' in "
+                "registration.agent_strategies_mapping['crystalflow_agent'][1]",
             )
         )
         completed = subprocess.run(
@@ -53,26 +56,9 @@ class PluginContractTests(unittest.TestCase):
             "progressive_function_calling",
             registration.agent_strategies_mapping["crystalflow_agent"][1],
         )
-        self.assertEqual(
-            set(registration.tools_mapping["crystalflow"][2]),
-            {
-                "activate_crystal",
-                "crystal_status",
-                "crystallize",
-                "execute_crystal",
-                "progressive_run",
-                "retire_crystal",
-            },
-        )
-        status_configuration = registration.tools_mapping["crystalflow"][2]["crystal_status"][0]
-        include_program = next(
-            parameter
-            for parameter in status_configuration.parameters
-            if parameter.name == "include_program"
-        )
-        self.assertIsNone(include_program.default)
+        self.assertEqual(registration.tools_mapping, {})
 
-    def test_manifest_provider_and_tools_are_wired(self) -> None:
+    def test_manifest_declares_only_the_agent_strategy_plugin_type(self) -> None:
         manifest = load_yaml(ROOT / "manifest.yaml")
         self.assertEqual(manifest["type"], "plugin")
         self.assertEqual(manifest["author"], "begovicbenjamin")
@@ -86,41 +72,7 @@ class PluginContractTests(unittest.TestCase):
         self.assertTrue(permission["tool"]["enabled"])
         self.assertTrue(permission["storage"]["enabled"])
 
-        provider_paths = manifest["plugins"]["tools"]
-        self.assertEqual(len(provider_paths), 1)
-        provider_path = ROOT / provider_paths[0]
-        self.assertTrue(provider_path.is_file())
-        provider = load_yaml(provider_path)
-        self.assertEqual(provider["identity"]["author"], manifest["author"])
-        self.assertTrue((ROOT / provider["extra"]["python"]["source"]).is_file())
-
-        names: set[str] = set()
-        for relative in provider["tools"]:
-            tool_path = ROOT / relative
-            self.assertTrue(tool_path.is_file(), relative)
-            tool = load_yaml(tool_path)
-            identity = tool["identity"]
-            self.assertEqual(identity["author"], manifest["author"])
-            self.assertNotIn(identity["name"], names)
-            names.add(identity["name"])
-            self.assertEqual(tool["output_schema"]["type"], "object")
-            source = ROOT / tool["extra"]["python"]["source"]
-            self.assertTrue(source.is_file(), source)
-            for parameter in tool.get("parameters", []):
-                self.assertIn(parameter["form"], {"llm", "form"})
-
-        self.assertEqual(
-            names,
-            {
-                "activate_crystal",
-                "crystal_status",
-                "crystallize",
-                "execute_crystal",
-                "progressive_run",
-                "retire_crystal",
-            },
-        )
-
+        self.assertEqual(set(manifest["plugins"]), {"agent_strategies"})
         agent_provider_paths = manifest["plugins"]["agent_strategies"]
         self.assertEqual(len(agent_provider_paths), 1)
         agent_provider = load_yaml(ROOT / agent_provider_paths[0])
@@ -179,6 +131,8 @@ class PluginContractTests(unittest.TestCase):
         ignored = (ROOT / ".difyignore").read_text(encoding="utf-8").splitlines()
         self.assertIn("__pycache__/", ignored)
         self.assertIn("*.py[cod]", ignored)
+        self.assertIn("tools/", ignored)
+        self.assertIn("provider/crystalflow.yaml", ignored)
 
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("github.com/BegovicBenjamin/Crystalflow-Dify/issues", readme)

@@ -6,6 +6,9 @@
 .mypy_cache/
 .ruff_cache/
 tests/
+tools/
+provider/crystalflow.py
+provider/crystalflow.yaml
 __pycache__/
 *.py[cod]
 *.difypkg
