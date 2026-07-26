@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import hashlib
 import json
 import re
@@ -200,10 +198,17 @@ def _error_diagnostic(exc: Exception) -> dict[str, str]:
         stage = "strategy_execution"
         cause = exc
     error_type = type(cause).__name__
-    fingerprint = _sha256(f"{stage}:{error_type}")[:DIAGNOSTIC_FINGERPRINT_LENGTH]
+    raw_error_code = getattr(cause, "code", None)
+    error_code = (
+        raw_error_code
+        if isinstance(raw_error_code, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", raw_error_code)
+        else "UNCLASSIFIED"
+    )
+    fingerprint = _sha256(f"{stage}:{error_type}:{error_code}")[:DIAGNOSTIC_FINGERPRINT_LENGTH]
     return {
         "stage": stage,
         "error_type": error_type,
+        "error_code": error_code,
         "diagnostic_id": fingerprint,
     }
 

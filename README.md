@@ -126,7 +126,7 @@ The project pins the Dify SDK to the `0.9.x` compatibility line and commits `uv.
 ### Publish from GitHub
 
 After pushing the repository, open **Actions → Package and release → Run workflow** and use tag
-`v0.3.2`. The workflow runs all release checks, downloads the pinned official Dify CLI, builds
+`v0.3.3`. The workflow runs all release checks, downloads the pinned official Dify CLI, builds
 `crystalflow.difypkg`, and attaches it to the matching GitHub Release.
 
 Dify Cloud manages signatures centrally. Self-hosted Dify enforces signature verification by

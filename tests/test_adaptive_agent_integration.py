@@ -24,6 +24,7 @@ from dify_plugin.entities.tool import (
     ToolProviderType,
 )
 from dify_plugin.interfaces.agent import AgentModelConfig, AgentToolIdentity, ToolEntity
+from pydantic import PydanticUserError
 
 from strategies.progressive_function_calling import (
     ProgressiveFunctionCallingAgentStrategy,
@@ -537,6 +538,35 @@ class AdaptiveAgentIntegrationTests(unittest.TestCase):
         self.assertEqual(turn.calls[0].arguments, {"sop_id": "SOP-42"})
         self.assertTrue(llm.invoke.call_args.kwargs["stream"])
 
+    def test_parameter_validation_reports_safe_pydantic_error_code(self) -> None:
+        strategy = create_strategy(
+            storage=MemoryKV(),
+            llm=QueuedLLM([]),
+            tool_invoker=RecordingToolInvoker(),
+        )
+        sensitive_error = "parameter model exposed workspace-secret-456"
+        incomplete_model_error = PydanticUserError(
+            sensitive_error,
+            code="class-not-fully-defined",
+        )
+
+        with patch(
+            "strategies.progressive_function_calling.ProgressiveFunctionCallingParams",
+            side_effect=incomplete_model_error,
+        ):
+            messages = list(strategy.invoke({}))
+        payload = self.assert_terminal_contract(messages)
+        diagnostic = payload["crystalflow"]
+
+        self.assertEqual(diagnostic["path"], "error")
+        self.assertEqual(diagnostic["stage"], "parameter_validation")
+        self.assertEqual(diagnostic["error_type"], "PydanticUserError")
+        self.assertEqual(diagnostic["error_code"], "class-not-fully-defined")
+        self.assertRegex(diagnostic["diagnostic_id"], r"^[0-9a-f]{16}$")
+        serialized_messages = "\n".join(message.model_dump_json() for message in messages)
+        self.assertNotIn(sensitive_error, serialized_messages)
+        self.assertNotIn("workspace-secret-456", serialized_messages)
+
     def test_strategy_error_still_yields_text_and_execution_metadata(self) -> None:
         strategy = create_strategy(
             storage=MemoryKV(),
@@ -558,6 +588,7 @@ class AdaptiveAgentIntegrationTests(unittest.TestCase):
         self.assertEqual(diagnostic["status"], "error")
         self.assertEqual(diagnostic["stage"], "strategy_execution")
         self.assertEqual(diagnostic["error_type"], "RuntimeError")
+        self.assertEqual(diagnostic["error_code"], "UNCLASSIFIED")
         self.assertRegex(diagnostic["diagnostic_id"], r"^[0-9a-f]{16}$")
         self.assertEqual(payload["execution_metadata"]["total_tokens"], 0)
         serialized_messages = "\n".join(message.model_dump_json() for message in messages)

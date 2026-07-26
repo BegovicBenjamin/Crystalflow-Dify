@@ -48,6 +48,67 @@ class PluginContractTests(unittest.TestCase):
             completed.stdout + completed.stderr,
         )
 
+    def test_fresh_sdk_loader_builds_a_complete_parameter_model(self) -> None:
+        script = "\n".join(
+            (
+                "import sys",
+                "from dify_plugin import DifyPluginEnv",
+                "from dify_plugin.core.plugin_registration import PluginRegistration",
+                "assert 'strategies.progressive_function_calling' not in sys.modules",
+                "registration = PluginRegistration(DifyPluginEnv(_env_file=None))",
+                "strategy_class = registration.agent_strategies_mapping"
+                "['crystalflow_agent'][1]['progressive_function_calling'][1]",
+                "params_class = strategy_class._invoke_progressive.__globals__"
+                "['ProgressiveFunctionCallingParams']",
+                "assert params_class.__pydantic_complete__ is True",
+                "tool = {",
+                "    'identity': {",
+                "        'author': 'Acme',",
+                "        'name': 'get_sop',",
+                "        'provider': 'acme/sop/sop',",
+                "        'label': {'en_US': 'Get SOP'},",
+                "    },",
+                "    'parameters': [],",
+                "    'description': {",
+                "        'human': {'en_US': 'Retrieve an SOP.'},",
+                "        'llm': 'Retrieve an SOP.',",
+                "    },",
+                "    'runtime_parameters': {},",
+                "    'provider_type': 'plugin',",
+                "}",
+                "params = params_class.model_validate({",
+                "    'query': 'What is in SOP-42?',",
+                "    'instruction': 'Use the configured knowledge tools.',",
+                "    'model': {",
+                "        'provider': 'test-provider',",
+                "        'model': 'test-model',",
+                "        'model_type': 'llm',",
+                "        'mode': 'chat',",
+                "    },",
+                "    'tools': [tool],",
+                "    'crystallizable_tools': [tool],",
+                "    'threshold': 2,",
+                "})",
+                "assert params.query == 'What is in SOP-42?'",
+                "assert params.model.provider == 'test-provider'",
+                "assert params.tools[0].identity.provider == 'acme/sop/sop'",
+                "assert params.crystallizable_tools[0].identity.name == 'get_sop'",
+            )
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
+        )
+
     def test_official_sdk_loads_the_complete_plugin(self) -> None:
         registration = PluginRegistration(DifyPluginEnv())
         self.assertEqual(registration.configuration.name, "crystalflow")
