@@ -10,7 +10,12 @@ import yaml
 from dify_plugin import DifyPluginEnv
 from dify_plugin.core.plugin_registration import PluginRegistration
 from dify_plugin.entities.agent import AgentInvokeMessage, AgentRuntime
-from dify_plugin.entities.model.llm import LLMResult, LLMUsage
+from dify_plugin.entities.model.llm import (
+    LLMResult,
+    LLMResultChunk,
+    LLMResultChunkDelta,
+    LLMUsage,
+)
 from dify_plugin.entities.model.message import AssistantPromptMessage
 from dify_plugin.entities.tool import (
     ToolDescription,
@@ -22,6 +27,7 @@ from dify_plugin.interfaces.agent import AgentModelConfig, AgentToolIdentity, To
 
 from strategies.progressive_function_calling import (
     ProgressiveFunctionCallingAgentStrategy,
+    ProgressiveFunctionCallingParams,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +147,34 @@ def final_result(text: str) -> LLMResult:
     )
 
 
+def streamed_tool_call_chunk(
+    *,
+    call_id: str,
+    name: str,
+    arguments: str,
+    index: int,
+) -> LLMResultChunk:
+    return LLMResultChunk(
+        model="test-model",
+        delta=LLMResultChunkDelta(
+            index=index,
+            message=AssistantPromptMessage(
+                content="",
+                tool_calls=[
+                    AssistantPromptMessage.ToolCall(
+                        id=call_id,
+                        type="function",
+                        function=AssistantPromptMessage.ToolCall.ToolCallFunction(
+                            name=name,
+                            arguments=arguments,
+                        ),
+                    )
+                ],
+            ),
+        ),
+    )
+
+
 def text_response(text: str) -> ToolInvokeMessage:
     return ToolInvokeMessage(
         type=ToolInvokeMessage.MessageType.TEXT,
@@ -224,6 +258,56 @@ class AdaptiveAgentIntegrationTests(unittest.TestCase):
             "progressive_function_calling",
             registration.agent_strategies_mapping["crystalflow_agent"][1],
         )
+
+    def test_current_dify_plugin_tool_type_normalizes_for_both_tool_lists(
+        self,
+    ) -> None:
+        raw_tool = {
+            "identity": {
+                "author": "Acme",
+                "name": "get_sop",
+                "provider": "acme/sop/sop",
+                "label": {"en_US": "Get SOP"},
+            },
+            "parameters": [
+                {
+                    "name": "sop_id",
+                    "label": {"en_US": "SOP ID"},
+                    "human_description": {"en_US": "The SOP identifier."},
+                    "llm_description": "The SOP identifier.",
+                    "type": "string",
+                    "form": "llm",
+                    "required": True,
+                }
+            ],
+            "description": {
+                "human": {"en_US": "Retrieve an SOP."},
+                "llm": "Retrieve an SOP.",
+            },
+            "runtime_parameters": {},
+            "provider_type": "plugin",
+        }
+        raw_parameters = {
+            "query": "What is in SOP-42?",
+            "model": make_model().model_dump(mode="json"),
+            "tools": [raw_tool],
+            "crystallizable_tools": [raw_tool],
+        }
+
+        params = ProgressiveFunctionCallingParams.model_validate(raw_parameters)
+
+        self.assertEqual(params.tools[0].provider_type, ToolProviderType.BUILT_IN)
+        self.assertEqual(
+            params.crystallizable_tools[0].provider_type,
+            ToolProviderType.BUILT_IN,
+        )
+        self.assertEqual(params.tools[0].identity.provider, "acme/sop/sop")
+        self.assertEqual(params.tools[0].identity.name, "get_sop")
+        self.assertEqual(
+            params.crystallizable_tools[0].identity.provider,
+            "acme/sop/sop",
+        )
+        self.assertEqual(params.crystallizable_tools[0].identity.name, "get_sop")
 
     def test_cold_observations_activate_then_warm_hit_skips_llm(self) -> None:
         storage = MemoryKV()
@@ -415,19 +499,70 @@ class AdaptiveAgentIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(payload["crystalflow"]["path"], "cold")
 
+    def test_streamed_tool_call_continuation_without_id_or_name_is_assembled(self) -> None:
+        llm = MagicMock()
+        llm.invoke.return_value = iter(
+            [
+                streamed_tool_call_chunk(
+                    call_id="call-1",
+                    name="get_sop",
+                    arguments='{"sop_id":"SOP',
+                    index=0,
+                ),
+                streamed_tool_call_chunk(
+                    call_id="",
+                    name="",
+                    arguments='-42"}',
+                    index=0,
+                ),
+            ]
+        )
+        strategy = create_strategy(
+            storage=MemoryKV(),
+            llm=llm,
+            tool_invoker=RecordingToolInvoker(),
+        )
+
+        turn = strategy._invoke_model(
+            model=make_model(),
+            messages=[],
+            stop=[],
+            stream=True,
+            prompt_tools=[],
+        )
+
+        self.assertEqual(len(turn.calls), 1)
+        self.assertEqual(turn.calls[0].call_id, "call-1")
+        self.assertEqual(turn.calls[0].tool_name, "get_sop")
+        self.assertEqual(turn.calls[0].arguments, {"sop_id": "SOP-42"})
+        self.assertTrue(llm.invoke.call_args.kwargs["stream"])
+
     def test_strategy_error_still_yields_text_and_execution_metadata(self) -> None:
         strategy = create_strategy(
             storage=MemoryKV(),
             llm=QueuedLLM([]),
             tool_invoker=RecordingToolInvoker(),
         )
+        sensitive_error = "provider rejected workspace-secret-123"
 
-        messages = list(strategy.invoke({}))
+        with patch.object(
+            strategy,
+            "_invoke_progressive",
+            side_effect=RuntimeError(sensitive_error),
+        ):
+            messages = list(strategy.invoke({}))
         payload = self.assert_terminal_contract(messages)
+        diagnostic = payload["crystalflow"]
 
-        self.assertEqual(payload["crystalflow"]["path"], "error")
-        self.assertEqual(payload["crystalflow"]["status"], "error")
+        self.assertEqual(diagnostic["path"], "error")
+        self.assertEqual(diagnostic["status"], "error")
+        self.assertEqual(diagnostic["stage"], "strategy_execution")
+        self.assertEqual(diagnostic["error_type"], "RuntimeError")
+        self.assertRegex(diagnostic["diagnostic_id"], r"^[0-9a-f]{16}$")
         self.assertEqual(payload["execution_metadata"]["total_tokens"], 0)
+        serialized_messages = "\n".join(message.model_dump_json() for message in messages)
+        self.assertNotIn(sensitive_error, serialized_messages)
+        self.assertNotIn("workspace-secret-123", serialized_messages)
 
 
 if __name__ == "__main__":

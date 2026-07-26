@@ -39,6 +39,7 @@ from crystalflow.adaptive_routes import (
 
 ROUTE_NAMESPACE = "crystalflow.agent-routes.v1"
 MAXIMUM_ITERATIONS = 3
+DIAGNOSTIC_FINGERPRINT_LENGTH = 16
 SUPPORTED_CONTRACT_SCHEMA_KEYS = frozenset(
     {
         "type",
@@ -89,8 +90,20 @@ class ProgressiveFunctionCallingParams(BaseModel):
 
     @field_validator("tools", "crystallizable_tools", mode="before")
     @classmethod
-    def empty_tool_lists(cls, value: object) -> object:
-        return [] if value is None else value
+    def normalize_tool_lists(cls, value: object) -> object:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return value
+
+        normalized: list[object] = []
+        for item in value:
+            if isinstance(item, Mapping) and item.get("provider_type") == "plugin":
+                # Current Dify distinguishes plugin tools from legacy built-ins,
+                # while SDK 0.9.x still invokes both through the built-in channel.
+                item = {**item, "provider_type": ToolProviderType.BUILT_IN.value}
+            normalized.append(item)
+        return normalized
 
 
 class ToolCall:
@@ -135,6 +148,15 @@ class ModelTurn:
         self.usage = usage
 
 
+class StrategyExecutionError(Exception):
+    """Attach a safe execution stage without exposing exception details."""
+
+    def __init__(self, stage: str, cause: Exception) -> None:
+        self.stage = stage
+        self.cause = cause
+        super().__init__(stage)
+
+
 def _enum_value(value: object) -> str:
     raw = getattr(value, "value", value)
     return str(raw)
@@ -170,6 +192,22 @@ def _content_text(content: object) -> str:
     return ""
 
 
+def _error_diagnostic(exc: Exception) -> dict[str, str]:
+    if isinstance(exc, StrategyExecutionError):
+        stage = exc.stage
+        cause = exc.cause
+    else:
+        stage = "strategy_execution"
+        cause = exc
+    error_type = type(cause).__name__
+    fingerprint = _sha256(f"{stage}:{error_type}")[:DIAGNOSTIC_FINGERPRINT_LENGTH]
+    return {
+        "stage": stage,
+        "error_type": error_type,
+        "diagnostic_id": fingerprint,
+    }
+
+
 class ProgressiveFunctionCallingAgentStrategy(AgentStrategy):
     """Function calling with an exact, deterministic fast path for proven routes."""
 
@@ -180,9 +218,16 @@ class ProgressiveFunctionCallingAgentStrategy(AgentStrategy):
         try:
             yield from self._invoke_progressive(parameters)
         except Exception as exc:
+            diagnostic = _error_diagnostic(exc)
+            yield self.create_log_message(
+                label=f"CRYSTALFLOW ERROR · {diagnostic['stage']}",
+                data=diagnostic,
+                status=ToolInvokeMessage.LogMessage.LogStatus.ERROR,
+            )
             yield self.create_text_message(
-                "CrystalFlow could not complete this request. "
-                "The normal model/tool route ended unexpectedly."
+                "CrystalFlow could not complete this request "
+                f"({diagnostic['stage']}, {diagnostic['error_type']}, "
+                f"{diagnostic['diagnostic_id']})."
             )
             yield self.create_json_message(
                 {
@@ -192,7 +237,7 @@ class ProgressiveFunctionCallingAgentStrategy(AgentStrategy):
                         "llm_calls": None,
                         "status": "error",
                         "reason_code": "strategy_error",
-                        "error_type": type(exc).__name__,
+                        **diagnostic,
                     },
                 }
             )
@@ -201,14 +246,20 @@ class ProgressiveFunctionCallingAgentStrategy(AgentStrategy):
         self,
         parameters: dict[str, Any],
     ) -> Generator[AgentInvokeMessage, None, None]:
-        params = ProgressiveFunctionCallingParams(**parameters)
-        tools_by_name = self._tools_by_name(params.tools)
-        contracts = self._fast_path_contracts(
-            params.tools,
-            params.crystallizable_tools,
-        )
-        scope = self._route_scope(params)
-        context = self._routing_context_binding(params.routing_context)
+        try:
+            params = ProgressiveFunctionCallingParams(**parameters)
+        except Exception as exc:
+            raise StrategyExecutionError("parameter_validation", exc) from exc
+        try:
+            tools_by_name = self._tools_by_name(params.tools)
+            contracts = self._fast_path_contracts(
+                params.tools,
+                params.crystallizable_tools,
+            )
+            scope = self._route_scope(params)
+            context = self._routing_context_binding(params.routing_context)
+        except Exception as exc:
+            raise StrategyExecutionError("strategy_setup", exc) from exc
         routes: AdaptiveRouteStore | None = None
         try:
             routes = AdaptiveRouteStore(
@@ -701,50 +752,110 @@ class ProgressiveFunctionCallingAgentStrategy(AgentStrategy):
         stream: bool,
         prompt_tools: list,
     ) -> ModelTurn:
-        result = self.session.model.llm.invoke(
-            model_config=LLMModelConfig(**model.model_dump(mode="json")),
-            prompt_messages=messages,
-            stop=stop,
-            stream=stream,
-            tools=prompt_tools,
-        )
+        try:
+            result = self.session.model.llm.invoke(
+                model_config=LLMModelConfig(**model.model_dump(mode="json")),
+                prompt_messages=messages,
+                stop=stop,
+                stream=stream,
+                tools=prompt_tools,
+            )
+        except Exception as exc:
+            raise StrategyExecutionError("model_invoke", exc) from exc
+
         if isinstance(result, LLMResult):
+            try:
+                calls = [
+                    ToolCall(
+                        call_id=call.id,
+                        tool_name=call.function.name,
+                        arguments=self._parse_arguments(call.function.arguments),
+                    )
+                    for call in result.message.tool_calls
+                ]
+                return ModelTurn(
+                    text=_content_text(result.message.content),
+                    calls=calls,
+                    usage=result.usage,
+                )
+            except Exception as exc:
+                raise StrategyExecutionError("model_response_parse", exc) from exc
+
+        text_parts: list[str] = []
+        raw_calls: list[AssistantPromptMessage.ToolCall] = []
+        position_slots: dict[int, int] = {}
+        id_slots: dict[str, int] = {}
+        usage: LLMUsage | None = None
+        iterator = iter(cast(Iterable[LLMResultChunk], result))
+        while True:
+            try:
+                chunk = next(iterator)
+            except StopIteration:
+                break
+            except Exception as exc:
+                raise StrategyExecutionError("model_invoke", exc) from exc
+
+            try:
+                message = chunk.delta.message
+                text_parts.append(_content_text(message.content))
+                for position, call in enumerate(message.tool_calls):
+                    slot = self._streamed_call_slot(
+                        call,
+                        position=position,
+                        raw_calls=raw_calls,
+                        position_slots=position_slots,
+                        id_slots=id_slots,
+                    )
+                    previous = raw_calls[slot] if slot < len(raw_calls) else None
+                    merged = self._merge_streamed_call(previous, call)
+                    if previous is None:
+                        raw_calls.append(merged)
+                    else:
+                        raw_calls[slot] = merged
+                    position_slots[position] = slot
+                    if merged.id:
+                        id_slots[merged.id] = slot
+                if chunk.delta.usage is not None:
+                    usage = chunk.delta.usage
+            except Exception as exc:
+                raise StrategyExecutionError("model_response_parse", exc) from exc
+
+        try:
             calls = [
                 ToolCall(
-                    call_id=call.id,
+                    call_id=call.id or f"index:{index}",
                     tool_name=call.function.name,
                     arguments=self._parse_arguments(call.function.arguments),
                 )
-                for call in result.message.tool_calls
+                for index, call in enumerate(raw_calls)
+                if call.id or call.function.name or call.function.arguments
             ]
-            return ModelTurn(
-                text=_content_text(result.message.content),
-                calls=calls,
-                usage=result.usage,
-            )
-
-        text_parts: list[str] = []
-        raw_calls: dict[str, AssistantPromptMessage.ToolCall] = {}
-        usage: LLMUsage | None = None
-        for chunk in cast(Iterable[LLMResultChunk], result):
-            message = chunk.delta.message
-            text_parts.append(_content_text(message.content))
-            for index, call in enumerate(message.tool_calls):
-                key = call.id or f"index:{index}"
-                previous = raw_calls.get(key)
-                raw_calls[key] = self._merge_streamed_call(previous, call)
-            if chunk.delta.usage is not None:
-                usage = chunk.delta.usage
-
-        calls = [
-            ToolCall(
-                call_id=call.id or key,
-                tool_name=call.function.name,
-                arguments=self._parse_arguments(call.function.arguments),
-            )
-            for key, call in raw_calls.items()
-        ]
+        except Exception as exc:
+            raise StrategyExecutionError("model_response_parse", exc) from exc
         return ModelTurn(text="".join(text_parts), calls=calls, usage=usage)
+
+    @staticmethod
+    def _streamed_call_slot(
+        call: AssistantPromptMessage.ToolCall,
+        *,
+        position: int,
+        raw_calls: list[AssistantPromptMessage.ToolCall],
+        position_slots: dict[int, int],
+        id_slots: dict[str, int],
+    ) -> int:
+        if call.id and call.id in id_slots:
+            return id_slots[call.id]
+
+        positioned = position_slots.get(position)
+        if positioned is not None:
+            previous = raw_calls[positioned]
+            if not call.id or not previous.id or previous.id == call.id:
+                return positioned
+
+        if not call.id and len(raw_calls) == 1:
+            return 0
+
+        return len(raw_calls)
 
     @staticmethod
     def _merge_streamed_call(

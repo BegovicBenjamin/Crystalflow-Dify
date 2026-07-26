@@ -1,6 +1,6 @@
 [project]
 name = "crystalflow-dify"
-version = "0.3.1"
+version = "0.3.2"
 description = "Automatic route crystallization for Dify agents"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

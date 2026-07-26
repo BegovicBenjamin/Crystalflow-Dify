@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag matching manifest.yaml, for example v0.3.1
+        description: Release tag matching manifest.yaml, for example v0.3.2
         required: true
-        default: v0.3.1
+        default: v0.3.2
         type: string
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must look like v0.3.1; got $RELEASE_TAG" >&2
+            echo "Release tag must look like v0.3.2; got $RELEASE_TAG" >&2
             exit 1
           fi
 
