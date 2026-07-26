@@ -1,0 +1,69 @@
+identity:
+  author: begovicbenjamin
+  name: progressive_function_calling
+  label:
+    en_US: CrystalFlow Adaptive
+description:
+  en_US: Use normal function calling until a safe route is proven, then invoke it directly.
+features:
+  - history-messages
+parameters:
+  - name: model
+    type: model-selector
+    scope: tool-call&llm
+    required: true
+    label:
+      en_US: Model
+  - name: tools
+    type: array[tools]
+    required: true
+    label:
+      en_US: Tools
+  - name: crystallizable_tools
+    type: array[tools]
+    required: true
+    label:
+      en_US: Safe direct-answer tools
+    help:
+      en_US: Select only read-only tools whose output can be returned directly to the user.
+  - name: instruction
+    type: string
+    required: true
+    label:
+      en_US: Instruction
+    auto_generate:
+      type: prompt_instruction
+    template:
+      enabled: true
+  - name: context
+    type: any
+    scope: array[object]
+    required: false
+    label:
+      en_US: Context
+  - name: routing_context
+    type: any
+    required: false
+    label:
+      en_US: Routing context
+    help:
+      en_US: Optional stable identifiers, such as selected_sop_id or current_user_id, for context-dependent requests.
+  - name: query
+    type: string
+    required: true
+    label:
+      en_US: Query
+  - name: threshold
+    type: number
+    required: true
+    default: 5
+    min: 2
+    max: 20
+    precision: 0
+    label:
+      en_US: Repetitions before activation
+    help:
+      en_US: Five identical successful routes is the recommended production default.
+extra:
+  python:
+    source: strategies/progressive_function_calling.py

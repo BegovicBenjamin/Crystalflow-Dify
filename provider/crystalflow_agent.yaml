@@ -1,0 +1,13 @@
+identity:
+  author: begovicbenjamin
+  name: crystalflow_agent
+  label:
+    en_US: CrystalFlow Agent
+  description:
+    en_US: Learn safe repeated tool routes and replay them without an LLM call.
+  icon: icon.svg
+  tags:
+    - productivity
+    - utilities
+strategies:
+  - strategies/progressive_function_calling.yaml
